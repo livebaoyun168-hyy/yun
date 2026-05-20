@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🍬 消消乐 | 三消游戏</title>
+    <style>
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            background: linear-gradient(145deg, #2b4450, #0f2c36);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Poppins', system-ui, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .game-container {
+            background: rgba(255, 248, 225, 0.2);
+            backdrop-filter: blur(4px);
+            border-radius: 64px;
+            padding: 20px;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.3);
+        }
+        .game-panel {
+            background: #fef9e8;
+            border-radius: 48px;
+            padding: 24px 20px 20px 20px;
+            box-shadow: inset 0 1px 4px rgba(0,0,0,0.05), 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .score-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 0 15px 25px 15px;
+        }
+        .score-box {
+            background: #5c3e2b;
+            color: #ffecd6;
+            padding: 8px 24px;
+            border-radius: 60px;
+            font-weight: bold;
+            font-size: 1.8rem;
+            letter-spacing: 2px;
+            box-shadow: inset 0 -2px 0 #3e2a1c, 0 5px 10px rgba(0,0,0,0.2);
+        }
+        .score-label {
+            font-size: 0.9rem;
+            margin-right: 10px;
+            font-weight: normal;
+        }
+        .shuffle-btn {
+            background: #ffb347;
+            border: none;
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 8px 24px;
+            border-radius: 40px;
+            color: #3b2a1f;
+            cursor: pointer;
+            transition: transform 0.1s ease, background 0.2s;
+            box-shadow: 0 6px 0 #c16f1a;
+            font-family: inherit;
+        }
+        .shuffle-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 3px 0 #c16f1a;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            background-color: #ffefd6;
+            border-radius: 40px;
+            gap: 6px;
+            padding: 18px;
+            box-shadow: inset 0 0 0 2px white, 0 8px 20px rgba(0,0,0,0.2);
+        }
+        .cell {
+            aspect-ratio: 1 / 1;
+            background: #ffe2b5;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.1rem;
+            cursor: pointer;
+            transition: all 0.08s linear;
+            box-shadow: 0 4px 0 #c29a6b;
+            transform: translateY(-2px);
+        }
+        .cell.selected {
+            background: #ffc489;
+            box-shadow: 0 0 0 3px white, 0 0 0 6px #ffb347;
+            transform: scale(0.98);
+        }
+        .cell:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #c29a6b;
+        }
+        @media (max-width: 550px) {
+            .cell { font-size: 1.4rem; }
+            .grid { gap: 4px; padding: 12px; }
+            .score-box { font-size: 1.2rem; padding: 4px 18px; }
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #ffefd6;
+            font-weight: 500;
+            text-shadow: 1px 1px 0 #1a2f38;
+        }
+        .footer a {
+            color: #ffd966;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+<div>
+    <div class="game-container">
+        <div class="game-panel">
+            <div class="score-bar">
+                <div class="score-box">
+                    <span class="score-label">🍭 得分</span>
+                    <span id="scoreValue">0</span>
+                </div>
+                <button class="shuffle-btn" id="shuffleBtn">🔄 洗牌</button>
+            </div>
+            <div class="grid" id="gameGrid"></div>
+        </div>
+    </div>
+    <div class="footer">
+        ✨ 点击相邻糖果交换 → 凑齐3个以上消除得分 ✨<br>
+        📱 手机/电脑都可玩 | 远程部署即开即玩
+    </div>
+</div>
+
+<script>
+    // ---------- 游戏配置 ----------
+    const ROWS = 8;
+    const COLS = 8;
+    const TILE_TYPES = 6;      // 6种糖果类型（emoji）
+    // 可爱的糖果图标库
+    const EMOJIS = ["🍎", "🍊", "🍒", "🍓", "🍉", "🍋"];
+    
+    let grid = [];          // 二维数组存储 0 ~ TILE_TYPES-1
+    let currentScore = 0;
+    let selectedRow = -1, selectedCol = -1;   // 当前选中的格子
+    let processing = false;  // 防止消除动画期间再进行操作
+    
+    // DOM 元素
+    const gridContainer = document.getElementById("gameGrid");
+    const scoreSpan = document.getElementById("scoreValue");
+    
+    // ---------- 初始化 / 随机填充 ----------
+    function initRandomGrid() {
+        let newGrid = [];
+        for (let i = 0; i < ROWS; i++) {
+            newGrid[i] = [];
+            for (let j = 0; j < COLS; j++) {
+                newGrid[i][j] = Math.floor(Math.random() * TILE_TYPES);
+            }
+        }
+        return newGrid;
+    }
+    
+    // 消除所有匹配 (直到稳定) , 返回是否进行过任何消除
+    function settleMatchesAndDrop() {
+        let anyEliminated = false;
+        while (true) {
+            const toEliminate = getAllMatches(grid);
+            if (toEliminate.size === 0) break;
+            anyEliminated = true;
+            // 根据消除的块增加分数 (每个消除块+10分)
+            const eliminatedCount = toEliminate.size;
+            currentScore += eliminatedCount * 10;
+            updateScoreUI();
+            // 执行消除：将这些位置设置为 -1 标记为空
+            for (let key of toEliminate) {
+                const [r, c] = key.split(',').map(Number);
+                grid[r][c] = -1;
+            }
+            // 下落 + 顶部填补新块
+            applyGravityAndRefill();
+        }
+        return anyEliminated;
+    }
+    
+    // 重力下落 & 顶部补充随机糖果
+    function applyGravityAndRefill() {
+        // 逐列处理
+        for (let c = 0; c < COLS; c++) {
+            const columnValues = [];
+            // 从下往上收集非空（非-1）的数值
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (grid[r][c] !== -1) {
+                    columnValues.push(grid[r][c]);
+                }
+            }
+            // 缺少几个就补几个新随机糖果
+            while (columnValues.length < ROWS) {
+                columnValues.push(Math.floor(Math.random() * TILE_TYPES));
+            }
+            // 现在 columnValues 从底部向上存储（索引0是最底部）
+            // 反转后重新赋值给这一列（从上到下）
+            columnValues.reverse();
+            for (let r = 0; r < ROWS; r++) {
+                grid[r][c] = columnValues[r];
+            }
+        }
+    }
+    
+    // 检测所有匹配的三消+（返回Set包含所有需要消除的坐标 "r,c"）
+    function getAllMatches(board) {
+        const toClear = new Set();
+        // 水平方向检测
+        for (let r = 0; r < ROWS; r++) {
+            let len = 1;
+            for (let c = 1; c <= COLS; c++) {
+                if (c < COLS && board[r][c] !== -1 && board[r][c] === board[r][c-1]) {
+                    len++;
+                } else {
+                    if (len >= 3) {
+                        for (let i = c - len; i < c; i++) {
+                            toClear.add(`${r},${i}`);
+                        }
+                    }
+                    len = 1;
+                }
+            }
+        }
+        // 垂直方向检测
+        for (let c = 0; c < COLS; c++) {
+            let len = 1;
+            for (let r = 1; r <= ROWS; r++) {
+                if (r < ROWS && board[r][c] !== -1 && board[r][c] === board[r-1][c]) {
+                    len++;
+                } else {
+                    if (len >= 3) {
+                        for (let i = r - len; i < r; i++) {
+                            toClear.add(`${i},${c}`);
+                        }
+                    }
+                    len = 1;
+                }
+            }
+        }
+        return toClear;
+    }
+    
+    // 检查是否有任何可能的交换（防止死锁，洗牌时调用）
+    function hasAnyValidMove() {
+        // 快速尝试交换相邻任意一对，看是否能产生匹配
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                // 向右交换
+                if (c + 1 < COLS) {
+                    swapGrid(r, c, r, c+1);
+                    let matches = getAllMatches(grid);
+                    swapGrid(r, c, r, c+1); // 换回来
+                    if (matches.size > 0) return true;
+                }
+                // 向下交换
+                if (r + 1 < ROWS) {
+                    swapGrid(r, c, r+1, c);
+                    let matches = getAllMatches(grid);
+                    swapGrid(r, c, r+1, c);
+                    if (matches.size > 0) return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // 辅助交换
+    function swapGrid(r1,c1, r2,c2) {
+        let temp = grid[r1][c1];
+        grid[r1][c1] = grid[r2][c2];
+        grid[r2][c2] = temp;
+    }
+    
+    // 洗牌: 打乱所有格子, 然后确保至少有一个可解
+    function reshuffleBoard() {
+        for (let i = 0; i < ROWS; i++) {
+            for (let j = 0; j < COLS; j++) {
+                grid[i][j] = Math.floor(Math.random() * TILE_TYPES);
+            }
+        }
+        // 如果洗完后没有可解移动，再洗一次（最多递归几次）
+        if (!hasAnyValidMove()) {
+            reshuffleBoard();
+        }
+        // 清除选中状态
+        clearSelected();
+        // 重绘
+        renderGrid();
+        // 再执行一次自然稳定消除（避免开局就有一堆连在一起的死锁情况）
+        setTimeout(() => {
+            settleMatchesAndDrop();
+            renderGrid();
+        }, 50);
+    }
+    
+    // ---------- UI 渲染 ----------
+    function renderGrid() {
+        gridContainer.innerHTML = "";
+        for (let i = 0; i < ROWS; i++) {
+            for (let j = 0; j < COLS; j++) {
+                const val = grid[i][j];
+                const emoji = (val >= 0 && val < TILE_TYPES) ? EMOJIS[val] : "❓";
+                const cell = document.createElement("div");
+                cell.className = "cell";
+                if (selectedRow === i && selectedCol === j) {
+                    cell.classList.add("selected");
+                }
+                cell.textContent = emoji;
+                cell.dataset.row = i;
+                cell.dataset.col = j;
+                cell.addEventListener("click", (function(row, col) {
+                    return function() { onCellClick(row, col); };
+                })(i, j));
+                gridContainer.appendChild(cell);
+            }
+        }
+    }
+    
+    function updateScoreUI() {
+        scoreSpan.innerText = currentScore;
+    }
+    
+    function clearSelected() {
+        selectedRow = -1;
+        selectedCol = -1;
+    }
+    
+    // ---------- 核心交换与消除逻辑 ----------
+    async function trySwapAndMatch(r1,c1, r2,c2) {
+        if (processing) return false;
+        processing = true;
+        
+        // 执行交换
+        swapGrid(r1,c1, r2,c2);
+        renderGrid();
+        await delay(80); // 微视觉反馈
+        
+        // 检查交换后是否有匹配
+        const matches = getAllMatches(grid);
+        if (matches.size > 0) {
+            // 有效交换, 让消除链自然执行
+            await settleMatchesAndDropLoop();
+            renderGrid();
+            // 额外检查游戏是否无步可走，自动洗牌一次
+            if (!hasAnyValidMove()) {
+                setTimeout(() => {
+                    reshuffleBoard();
+                }, 200);
+            }
+            processing = false;
+            return true;
+        } else {
+            // 无效交换，换回来
+            swapGrid(r1,c1, r2,c2);
+            renderGrid();
+            await delay(100);
+            processing = false;
+            return false;
+        }
+    }
+    
+    // 持续消除 + 下落，直到稳定
+    async function settleMatchesAndDropLoop() {
+        let changed = true;
+        while (changed) {
+            const matches = getAllMatches(grid);
+            if (matches.size === 0) break;
+            // 消除加分数已经在settleMatchesAndDrop中做了
+            // 但我们这里要逐步消除并保持UI刷新
+            for (let key of matches) {
+                const [r,c] = key.split(',').map(Number);
+                grid[r][c] = -1;
+            }
+            currentScore += matches.size * 10;
+            updateScoreUI();
+            applyGravityAndRefill();
+            renderGrid();
+            await delay(70);
+        }
+    }
+    
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    // 点击处理 (相邻交换)
+    async function onCellClick(row, col) {
+        if (processing) return;
+        
+        // 尚未选中任何格子
+        if (selectedRow === -1 && selectedCol === -1) {
+            // 选中当前格子
+            selectedRow = row;
+            selectedCol = col;
+            renderGrid();
+            return;
+        }
+        
+        // 已选中一个格子，判断是否相邻
+        const isAdjacent = (Math.abs(selectedRow - row) + Math.abs(selectedCol - col)) === 1;
+        if (!isAdjacent) {
+            // 不相邻：直接更换选中为新格子
+            selectedRow = row;
+            selectedCol = col;
+            renderGrid();
+            return;
+        }
+        
+        // 相邻 => 尝试交换
+        const r1 = selectedRow, c1 = selectedCol;
+        const r2 = row, c2 = col;
+        clearSelected();
+        renderGrid();
+        
+        const success = await trySwapAndMatch(r1, c1, r2, c2);
+        if (!success) {
+            // 提示无效交换（可选轻提醒）
+            const tempMsg = document.createElement("div");
+            tempMsg.textContent = "😖 这样不会消除哦";
+            tempMsg.style.position = "fixed";
+            tempMsg.style.bottom = "30%";
+            tempMsg.style.left = "50%";
+            tempMsg.style.transform = "translateX(-50%)";
+            tempMsg.style.backgroundColor = "#ff5e6b";
+            tempMsg.style.color = "white";
+            tempMsg.style.padding = "8px 18px";
+            tempMsg.style.borderRadius = "40px";
+            tempMsg.style.fontWeight = "bold";
+            tempMsg.style.zIndex = "999";
+            tempMsg.style.fontSize = "0.9rem";
+            document.body.appendChild(tempMsg);
+            setTimeout(() => tempMsg.remove(), 800);
+        }
+    }
+    
+    // 洗牌按钮逻辑
+    function shuffleAction() {
+        if (processing) return;
+        processing = true;
+        currentScore = Math.max(0, currentScore - 50); // 洗牌代价: -50分，避免无限洗牌刷分
+        updateScoreUI();
+        reshuffleBoard();
+        processing = false;
+    }
+    
+    // ---------- 游戏启动 ----------
+    function startGame() {
+        grid = initRandomGrid();
+        currentScore = 0;
+        updateScoreUI();
+        clearSelected();
+        renderGrid();
+        // 开局稳定消除一遍
+        setTimeout(async () => {
+            processing = true;
+            await settleMatchesAndDropLoop();
+            processing = false;
+            renderGrid();
+            // 如果开局就没有可行步数，洗牌一次
+            if (!hasAnyValidMove()) {
+                setTimeout(() => {
+                    reshuffleBoard();
+                }, 100);
+            }
+        }, 50);
+    }
+    
+    // 绑定洗牌按钮
+    document.getElementById("shuffleBtn").addEventListener("click", () => {
+        if (processing) return;
+        shuffleAction();
+    });
+    
+    startGame();
+</script>
+</body>
+</html>
